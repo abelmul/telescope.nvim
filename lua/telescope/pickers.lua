@@ -94,6 +94,8 @@ function Picker:new(opts)
 
     default_selection_index = opts.default_selection_index,
 
+    get_selection_window = get_default(opts.get_selection_window, config.values.get_selection_window),
+
     cwd = opts.cwd,
 
     _find_id = 0,
@@ -115,6 +117,7 @@ function Picker:new(opts)
     selection_strategy = get_default(opts.selection_strategy, config.values.selection_strategy),
 
     push_cursor_on_edit = get_default(opts.push_cursor_on_edit, false),
+    push_tagstack_on_edit = get_default(opts.push_tagstack_on_edit, false),
 
     layout_strategy = layout_strategy,
     layout_config = config.smarter_depth_2_extend(opts.layout_config or {}, config.values.layout_config or {}),
@@ -402,10 +405,8 @@ function Picker:find()
 
   -- Prompt prefix
   local prompt_prefix = self.prompt_prefix
-  if prompt_prefix ~= "" then
-    a.nvim_buf_set_option(prompt_bufnr, "buftype", "prompt")
-    vim.fn.prompt_setprompt(prompt_bufnr, prompt_prefix)
-  end
+  a.nvim_buf_set_option(prompt_bufnr, "buftype", "prompt")
+  vim.fn.prompt_setprompt(prompt_bufnr, prompt_prefix)
   self.prompt_prefix = prompt_prefix
   self:_reset_prefix_color()
 
@@ -425,28 +426,34 @@ function Picker:find()
 
   local find_id = self:_next_find_id()
 
+  if self.default_text then
+    self:set_prompt(self.default_text)
+  end
+
+  if vim.tbl_contains({ "insert", "normal" }, self.initial_mode) then
+    local mode = vim.fn.mode()
+    local keys
+    if self.initial_mode == "normal" then
+      -- n: A<ESC> makes sure cursor is at always at end of prompt w/o default_text
+      keys = mode ~= "n" and "<ESC>A<ESC>" or "A<ESC>"
+    else
+      -- always fully retrigger insert mode: required for going from one picker to next
+      keys = mode ~= "n" and "<ESC>A" or "A"
+    end
+    a.nvim_feedkeys(a.nvim_replace_termcodes(keys, true, false, true), "n", true)
+  else
+    utils.notify(
+      "pickers.find",
+      { msg = "`initial_mode` should be one of ['normal', 'insert'] but passed " .. self.initial_mode, level = "ERROR" }
+    )
+  end
+
   local main_loop = async.void(function()
     self.sorter:_init()
 
     -- Do filetype last, so that users can register at the last second.
     pcall(a.nvim_buf_set_option, prompt_bufnr, "filetype", "TelescopePrompt")
     pcall(a.nvim_buf_set_option, results_bufnr, "filetype", "TelescopeResults")
-
-    if self.default_text then
-      self:set_prompt(self.default_text)
-    end
-
-    if self.initial_mode == "insert" then
-      vim.schedule(function()
-        -- startinsert! did not reliable do `A` no idea why, i even looked at the source code
-        -- Example: live_grep -> type something -> quit -> Telescope pickers -> resume -> cursor of by one
-        if vim.fn.mode() ~= "i" then
-          vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<ESC>A", true, false, true), "n", true)
-        end
-      end)
-    elseif self.initial_mode ~= "normal" then
-      error("Invalid setting for initial_mode: " .. self.initial_mode)
-    end
 
     await_schedule()
 
@@ -732,24 +739,16 @@ end
 ---@param status table: table containing information on the picker
 --- and associated windows. Generally obtained from `state.get_status`
 function Picker.close_windows(status)
-  local prompt_win = status.prompt_win
-  local results_win = status.results_win
-  local preview_win = status.preview_win
+  utils.win_delete("results_win", status.results_win, true, true)
+  utils.win_delete("preview_win", status.preview_win, true, true)
 
-  local prompt_border_win = status.prompt_border_win
-  local results_border_win = status.results_border_win
-  local preview_border_win = status.preview_border_win
+  utils.win_delete("prompt_border_win", status.prompt_border_win, true, true)
+  utils.win_delete("results_border_win", status.results_border_win, true, true)
+  utils.win_delete("preview_border_win", status.preview_border_win, true, true)
 
-  utils.win_delete("results_win", results_win, true, true)
-  utils.win_delete("preview_win", preview_win, true, true)
-
-  utils.win_delete("prompt_border_win", prompt_border_win, true, true)
-  utils.win_delete("results_border_win", results_border_win, true, true)
-  utils.win_delete("preview_border_win", preview_border_win, true, true)
-
-  vim.defer_fn(function()
-    utils.win_delete("prompt_win", prompt_win, true)
-  end, 10)
+  -- we cant use win_delete. We first need to close and then delete the buffer
+  vim.api.nvim_win_close(status.prompt_win, true)
+  utils.buf_delete(status.prompt_bufnr)
 
   state.clear_status(status.prompt_bufnr)
 end
@@ -1467,6 +1466,12 @@ function pickers.on_close_prompt(prompt_bufnr)
     picker.finder:close()
   end
 
+  -- so we dont call close_windows multiple times we clear that autocmd
+  vim.api.nvim_clear_autocmds {
+    group = "PickerInsert",
+    event = "BufLeave",
+    buffer = prompt_bufnr,
+  }
   picker.close_windows(status)
   mappings.clear(prompt_bufnr)
 end

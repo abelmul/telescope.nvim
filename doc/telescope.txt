@@ -15,6 +15,51 @@ Getting started with telescope:
      what options these implement
   6. Profit
 
+The below flow chart illustrates a simplified telescope architecture:
+┌───────────────────────────────────────────────────────────┐
+│      ┌────────┐                                           │
+│      │ Multi  │                                ┌───────+  │
+│      │ Select │    ┌───────┐                   │ Entry │  │
+│      └─────┬──*    │ Entry │    ┌────────+     │ Maker │  │
+│            │   ┌───│Manager│────│ Sorter │┐    └───┬───*  │
+│            ▼   ▼   └───────*    └────────┘│        │      │
+│            1────────┐                 2───┴──┐     │      │
+│      ┌─────│ Picker │                 │Finder│◄────┘      │
+│      ▼     └───┬────┘                 └──────*            │
+│ ┌────────┐     │       3────────+         ▲               │
+│ │Selected│     └───────│ Prompt │─────────┘               │
+│ │ Entry  │             └───┬────┘                         │
+│ └────────*             ┌───┴────┐  ┌────────┐  ┌────────┐ │
+│     │  ▲    4─────────┐│ Prompt │  │(Attach)│  │Actions │ │
+│     ▼  └──► │ Results ││ Buffer │◄─┤Mappings│◄─┤User Fn │ │
+│5─────────┐  └─────────┘└────────┘  └────────┘  └────────┘ │
+││Previewer│                                                │
+│└─────────┘                   telescope.nvim architecture  │
+└───────────────────────────────────────────────────────────┘
+
+  + The `Entry Maker` at least defines
+    - value: "raw" result of the finder
+    - ordinal: string to be sorted derived from value
+    - display: line representation of entry in results buffer
+
+  * The finder, entry manager, selected entry, and multi selections
+    comprises `entries` constructed by the `Entry Maker` from
+    raw results of the finder (`value`s)
+
+ Primary components:
+  1 Picker: central UI dedicated to varying use cases
+            (finding files, grepping, diagnostics, etc.)
+            see :h telescope.builtin
+  2 Finder: pipe or interactively generates results to pick over
+  3 Prompt: user input that triggers the finder which sorts results
+            in order into the entry manager
+  4 Results: listed entries scored by sorter from finder results
+  5 Previewer: preview of context of selected entry
+               see :h telescope.previewers
+
+A practical introduction into telescope customization is our `developers.md`
+(top-level of repo) and `:h telescope.actions` that showcase how to access
+information about the state of the picker (current selection, etc.).
 To find out more:
 https://github.com/nvim-telescope/telescope.nvim
 
@@ -29,8 +74,8 @@ https://github.com/nvim-telescope/telescope.nvim
   :h telescope.actions.set
   :h telescope.actions.utils
   :h telescope.actions.generate
-  :h telescope.previewers
   :h telescope.actions.history
+  :h telescope.previewers
 
 telescope.setup({opts})                                    *telescope.setup()*
     Setup function to be run by user. Configures the defaults, pickers and
@@ -235,7 +280,9 @@ telescope.setup({opts})                                    *telescope.setup()*
         - "tail"      only display the file name, and not the path
         - "absolute"  display absolute paths
         - "smart"     remove as much from the path as possible to only show
-                      the difference between the displayed paths
+                      the difference between the displayed paths.
+                      Warning: The nature of the algorithm might have a negative
+                      performance impact!
         - "shorten"   only display the first character of each directory in
                       the path
         - "truncate"  truncates the start of the path when the whole path will
@@ -611,6 +658,15 @@ telescope.setup({opts})                                    *telescope.setup()*
 
         Default: nil
 
+                                  *telescope.defaults.get_selection_window*
+    get_selection_window: ~
+          Function that takes function(picker, entry) and returns a window id.
+          The window ID will be used to decide what window the chosen file will
+          be opened in and the cursor placed in upon leaving the picker.
+
+          Default: `function() return 0 end`
+
+
                                         *telescope.defaults.file_previewer*
     file_previewer: ~
         Function pointer to the default file_previewer. It is mostly used
@@ -762,6 +818,11 @@ builtin.live_grep({opts})                      *telescope.builtin.live_grep()*
         {search_dirs}         (table)     directory/directories to search in,
                                           mutually exclusive with
                                           `grep_open_files`
+        {glob_pattern}        (string)    argument to be used with `--glob`,
+                                          e.g. "*.toml", can use the opposite
+                                          "!*.toml"
+        {type_filter}         (string)    argument to be used with `--type`,
+                                          e.g. "rust", see `rg --type-list`
         {additional_args}     (function)  function(opts) which returns a table
                                           of additional arguments to be passed
                                           on
@@ -873,6 +934,8 @@ builtin.tags({opts})                                *telescope.builtin.tags()*
                                     true)
         {only_sort_tags} (boolean)  if true we will only sort tags (default:
                                     false)
+        {fname_width}    (number)   defines the width of the filename section
+                                    (default: 30)
 
 
 builtin.current_buffer_tags({opts})  *telescope.builtin.current_buffer_tags()*
@@ -892,6 +955,8 @@ builtin.current_buffer_tags({opts})  *telescope.builtin.current_buffer_tags()*
                                     true)
         {only_sort_tags} (boolean)  if true we will only sort tags (default:
                                     false)
+        {fname_width}    (number)   defines the width of the filename section
+                                    (default: 30)
 
 
 builtin.git_files({opts})                      *telescope.builtin.git_files()*
@@ -1101,6 +1166,9 @@ builtin.commands({opts})                        *telescope.builtin.commands()*
     Parameters: ~
         {opts} (table)  options to pass to the picker
 
+    Options: ~
+        {show_buf_command} (boolean)  show buf local command (Default: true)
+
 
 builtin.quickfix({opts})                        *telescope.builtin.quickfix()*
     Lists items in the quickfix list, jumps to location on `<cr>`
@@ -1112,6 +1180,17 @@ builtin.quickfix({opts})                        *telescope.builtin.quickfix()*
     Options: ~
         {ignore_filename} (boolean)  dont show filenames (default: true)
         {trim_text}       (boolean)  trim results text (default: false)
+        {nr}              (number)   specify the quickfix list number
+
+
+builtin.quickfixhistory({opts})          *telescope.builtin.quickfixhistory()*
+    Lists all quickfix lists in your history and open them with
+    `builtin.quickfix`. It seems that neovim only keeps the full history for 10
+    lists
+
+
+    Parameters: ~
+        {opts} (table)  options to pass to the picker
 
 
 builtin.loclist({opts})                          *telescope.builtin.loclist()*
@@ -1403,33 +1482,6 @@ builtin.lsp_implementations({opts})  *telescope.builtin.lsp_implementations()*
         {trim_text}       (boolean)  trim results text (default: false)
 
 
-builtin.lsp_code_actions({opts})        *telescope.builtin.lsp_code_actions()*
-    Lists any LSP actions for the word under the cursor which can be triggered
-    with `<cr>`
-
-
-    Parameters: ~
-        {opts} (table)  options to pass to the picker
-
-    Options: ~
-        {timeout} (number)  timeout for the sync call (default: 10000)
-
-
-builtin.lsp_range_code_actions({opts}) *telescope.builtin.lsp_range_code_actions()*
-    Lists any LSP actions for a given range, that can be triggered with `<cr>`
-
-
-    Parameters: ~
-        {opts} (table)  options to pass to the picker
-
-    Options: ~
-        {timeout}    (number)  timeout for the sync call (default: 10000)
-        {start_line} (number)  where the code action starts (default: handled
-                               by :'<,'>Telescope lsp_range_code_actions)
-        {end_line}   (number)  where the code action ends (default: handled by
-                               :'<,'>Telescope lsp_range_code_actions)
-
-
 builtin.lsp_document_symbols({opts}) *telescope.builtin.lsp_document_symbols()*
     Lists LSP document symbols in the current buffer
     - Default keymaps:
@@ -1512,8 +1564,9 @@ builtin.diagnostics({opts})                  *telescope.builtin.diagnostics()*
         {opts} (table)  options to pass to the picker
 
     Options: ~
-        {bufnr}          (string|number)   if nil get diagnostics for all open
-                                           buffers. Use 0 for current buffer
+        {bufnr}          (number|nil)      Buffer number to get diagnostics
+                                           from. Use 0 for current buffer or
+                                           nil for all buffers
         {severity}       (string|number)   filter diagnostics by severity name
                                            (string) or id (number)
         {severity_limit} (string|number)   keep diagnostics equal or more
@@ -1564,7 +1617,7 @@ themes.get_cursor()                            *telescope.themes.get_cursor()*
 
         `local builtin = require('telescope.builtin')`
         `local themes = require('telescope.themes')`
-        `builtin.lsp_code_actions(themes.get_cursor())`
+        `builtin.lsp_references(themes.get_cursor())`
 <
 
 
@@ -2954,9 +3007,6 @@ previewers.new_termopen_previewer() *telescope.previewers.new_termopen_previewer
     Furthermore, it will forward all `config.set_env` environment variables to
     that terminal process.
 
-    While this interface is a good start, it was replaced with the way more
-    flexible `buffer_previewer` and is now deprecated.
-
 
 
 previewers.cat()                                  *telescope.previewers.cat()*
@@ -3211,7 +3261,7 @@ So you have a history for:
 - live_grep project_2
 - etc
 
-See github.com/nvim-telescope/telescope-smart-history.nvim
+See https://github.com/nvim-telescope/telescope-smart-history.nvim
 
 histories.History()                      *telescope.actions.history.History()*
     Manages prompt history

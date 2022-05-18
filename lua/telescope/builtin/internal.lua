@@ -318,6 +318,15 @@ internal.commands = function(opts)
           table.insert(commands, cmd)
         end
 
+        local need_buf_command = vim.F.if_nil(opts.show_buf_command, true)
+
+        if need_buf_command then
+          local buf_command_iter = vim.api.nvim_buf_get_commands(0, {})
+          buf_command_iter[true] = nil -- remove the redundant entry
+          for _, cmd in pairs(buf_command_iter) do
+            table.insert(commands, cmd)
+          end
+        end
         return commands
       end)(),
 
@@ -350,7 +359,8 @@ internal.commands = function(opts)
 end
 
 internal.quickfix = function(opts)
-  local locations = vim.fn.getqflist()
+  local qf_identifier = opts.id or vim.F.if_nil(opts.nr, "$")
+  local locations = vim.fn.getqflist({ [opts.id and "id" or "nr"] = qf_identifier, items = true }).items
 
   if vim.tbl_isempty(locations) then
     return
@@ -364,6 +374,65 @@ internal.quickfix = function(opts)
     },
     previewer = conf.qflist_previewer(opts),
     sorter = conf.generic_sorter(opts),
+  }):find()
+end
+
+internal.quickfixhistory = function(opts)
+  local qflists = {}
+  for i = 1, 10 do -- (n)vim keeps at most 10 quickfix lists in full
+    -- qf weirdness: id = 0 gets id of quickfix list nr
+    local qflist = vim.fn.getqflist { nr = i, id = 0, title = true, items = true }
+    if not vim.tbl_isempty(qflist.items) then
+      table.insert(qflists, qflist)
+    end
+  end
+  local entry_maker = opts.make_entry
+    or function(entry)
+      return {
+        value = entry.title or "Untitled",
+        ordinal = entry.title or "Untitled",
+        display = entry.title or "Untitled",
+        nr = entry.nr,
+        id = entry.id,
+        items = entry.items,
+      }
+    end
+  local qf_entry_maker = make_entry.gen_from_quickfix(opts)
+  pickers.new(opts, {
+    prompt_title = "Quickfix History",
+    finder = finders.new_table {
+      results = qflists,
+      entry_maker = entry_maker,
+    },
+    previewer = previewers.new_buffer_previewer {
+      title = "Quickfix List Preview",
+      dyn_title = function(_, entry)
+        return entry.title
+      end,
+
+      get_buffer_by_name = function(_, entry)
+        return "quickfixlist_" .. tostring(entry.nr)
+      end,
+
+      define_preview = function(self, entry)
+        if self.state.bufname then
+          return
+        end
+        local entries = vim.tbl_map(function(i)
+          return qf_entry_maker(i):display()
+        end, entry.items)
+        vim.api.nvim_buf_set_lines(self.state.bufnr, 0, -1, false, entries)
+      end,
+    },
+    sorter = conf.generic_sorter(opts),
+    attach_mappings = function(_, _)
+      action_set.select:replace(function(prompt_bufnr)
+        local nr = action_state.get_selected_entry().nr
+        actions.close(prompt_bufnr)
+        internal.quickfix { nr = nr }
+      end)
+      return true
+    end,
   }):find()
 end
 
@@ -614,13 +683,15 @@ internal.help_tags = function(opts)
         if not line:match "^!_TAG_" then
           local fields = vim.split(line, delimiter, true)
           if #fields == 3 and not tags_map[fields[1]] then
-            table.insert(tags, {
-              name = fields[1],
-              filename = help_files[fields[2]],
-              cmd = fields[3],
-              lang = lang,
-            })
-            tags_map[fields[1]] = true
+            if fields[1] ~= "help-tags" or fields[2] ~= "tags" then
+              table.insert(tags, {
+                name = fields[1],
+                filename = help_files[fields[2]],
+                cmd = fields[3],
+                lang = lang,
+              })
+              tags_map[fields[1]] = true
+            end
           end
         end
       end
@@ -655,7 +726,7 @@ internal.help_tags = function(opts)
         if cmd == "default" or cmd == "horizontal" then
           vim.cmd("help " .. selection.value)
         elseif cmd == "vertical" then
-          vim.cmd("vert bo help " .. selection.value)
+          vim.cmd("vert help " .. selection.value)
         elseif cmd == "tab" then
           vim.cmd("tab help " .. selection.value)
         end
@@ -694,7 +765,7 @@ internal.man_pages = function(opts)
         if cmd == "default" or cmd == "horizontal" then
           vim.cmd("Man " .. args)
         elseif cmd == "vertical" then
-          vim.cmd("vert bo Man " .. args)
+          vim.cmd("vert Man " .. args)
         elseif cmd == "tab" then
           vim.cmd("tab Man " .. args)
         end
@@ -922,11 +993,45 @@ internal.colorscheme = function(opts)
 end
 
 internal.marks = function(opts)
-  local marks = vim.api.nvim_exec("marks", true)
-  local marks_table = vim.fn.split(marks, "\n")
-
-  -- Pop off the header.
-  table.remove(marks_table, 1)
+  local local_marks = {
+    items = vim.fn.getmarklist(opts.bufnr),
+    name_func = function(_, line)
+      return vim.api.nvim_buf_get_lines(opts.bufnr, line - 1, line, false)[1]
+    end,
+  }
+  local global_marks = {
+    items = vim.fn.getmarklist(),
+    name_func = function(mark, _)
+      -- get buffer name if it is opened, otherwise get file name
+      return vim.api.nvim_get_mark(mark, {})[4]
+    end,
+  }
+  local marks_table = {}
+  local marks_others = {}
+  local bufname = vim.api.nvim_buf_get_name(opts.bufnr)
+  for _, cnf in ipairs { local_marks, global_marks } do
+    for _, v in ipairs(cnf.items) do
+      -- strip the first single quote character
+      local mark = string.sub(v.mark, 2, 3)
+      local _, lnum, col, _ = unpack(v.pos)
+      local name = cnf.name_func(mark, lnum)
+      -- same format to :marks command
+      local line = string.format("%s %6d %4d %s", mark, lnum, col - 1, name)
+      local row = {
+        line = line,
+        lnum = lnum,
+        col = col,
+        filename = v.file or bufname,
+      }
+      -- non alphanumeric marks goes to last
+      if mark:match "%w" then
+        table.insert(marks_table, row)
+      else
+        table.insert(marks_others, row)
+      end
+    end
+  end
+  marks_table = vim.fn.extend(marks_table, marks_others)
 
   pickers.new(opts, {
     prompt_title = "Marks",
@@ -937,6 +1042,7 @@ internal.marks = function(opts)
     previewer = conf.grep_previewer(opts),
     sorter = conf.generic_sorter(opts),
     push_cursor_on_edit = true,
+    push_tagstack_on_edit = true,
   }):find()
 end
 

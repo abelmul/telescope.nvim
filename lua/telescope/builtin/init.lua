@@ -27,8 +27,7 @@
 ---@brief ]]
 
 if 1 ~= vim.fn.has "nvim-0.7.0" then
-  vim.api.nvim_err_writeln "This plugins requires neovim 0.7.0"
-  vim.api.nvim_err_writeln "Please update your neovim."
+  vim.api.nvim_err_writeln "Telescope.nvim requires at least nvim-0.7.0. See `:h telescope.changelog-1851`"
   return
 end
 
@@ -56,6 +55,8 @@ end
 ---@field cwd string: root dir to search from (default: cwd, use utils.buffer_dir() to search relative to open buffer)
 ---@field grep_open_files boolean: if true, restrict search to open files only, mutually exclusive with `search_dirs`
 ---@field search_dirs table: directory/directories to search in, mutually exclusive with `grep_open_files`
+---@field glob_pattern string: argument to be used with `--glob`, e.g. "*.toml", can use the opposite "!*.toml"
+---@field type_filter string: argument to be used with `--type`, e.g. "rust", see `rg --type-list`
 ---@field additional_args function: function(opts) which returns a table of additional arguments to be passed on
 ---@field max_results number: define a upper result value
 ---@field disable_coordinates boolean: don't show the line & row numbers (default: false)
@@ -106,6 +107,7 @@ builtin.current_buffer_fuzzy_find = require_on_exported_call("telescope.builtin.
 ---@field ctags_file string: specify a particular ctags file to use
 ---@field show_line boolean: if true, shows the content of the line the tag is found on in the picker (default: true)
 ---@field only_sort_tags boolean: if true we will only sort tags (default: false)
+---@field fname_width number: defines the width of the filename section (default: 30)
 builtin.tags = require_on_exported_call("telescope.builtin.files").tags
 
 --- Lists all of the tags for the currently open buffer, with a preview
@@ -114,6 +116,7 @@ builtin.tags = require_on_exported_call("telescope.builtin.files").tags
 ---@field ctags_file string: specify a particular ctags file to use
 ---@field show_line boolean: if true, shows the content of the line the tag is found on in the picker (default: true)
 ---@field only_sort_tags boolean: if true we will only sort tags (default: false)
+---@field fname_width number: defines the width of the filename section (default: 30)
 builtin.current_buffer_tags = require_on_exported_call("telescope.builtin.files").current_buffer_tags
 
 --
@@ -235,13 +238,20 @@ builtin.symbols = require_on_exported_call("telescope.builtin.internal").symbols
 
 --- Lists available plugin/user commands and runs them on `<cr>`
 ---@param opts table: options to pass to the picker
+---@field show_buf_command boolean: show buf local command (Default: true)
 builtin.commands = require_on_exported_call("telescope.builtin.internal").commands
 
 --- Lists items in the quickfix list, jumps to location on `<cr>`
 ---@param opts table: options to pass to the picker
 ---@field ignore_filename boolean: dont show filenames (default: true)
 ---@field trim_text boolean: trim results text (default: false)
+---@field nr number: specify the quickfix list number
 builtin.quickfix = require_on_exported_call("telescope.builtin.internal").quickfix
+
+--- Lists all quickfix lists in your history and open them with `builtin.quickfix`. It seems that neovim
+--- only keeps the full history for 10 lists
+---@param opts table: options to pass to the picker
+builtin.quickfixhistory = require_on_exported_call("telescope.builtin.internal").quickfixhistory
 
 --- Lists items from the current window's location list, jumps to location on `<cr>`
 ---@param opts table: options to pass to the picker
@@ -383,18 +393,6 @@ builtin.lsp_type_definitions = require("telescope.builtin.lsp").type_definitions
 ---@field trim_text boolean: trim results text (default: false)
 builtin.lsp_implementations = require_on_exported_call("telescope.builtin.lsp").implementations
 
---- Lists any LSP actions for the word under the cursor which can be triggered with `<cr>`
----@param opts table: options to pass to the picker
----@field timeout number: timeout for the sync call (default: 10000)
-builtin.lsp_code_actions = require_on_exported_call("telescope.builtin.lsp").code_actions
-
---- Lists any LSP actions for a given range, that can be triggered with `<cr>`
----@param opts table: options to pass to the picker
----@field timeout number: timeout for the sync call (default: 10000)
----@field start_line number: where the code action starts (default: handled by :'<,'>Telescope lsp_range_code_actions)
----@field end_line number: where the code action ends (default: handled by :'<,'>Telescope lsp_range_code_actions)
-builtin.lsp_range_code_actions = require_on_exported_call("telescope.builtin.lsp").range_code_actions
-
 --- Lists LSP document symbols in the current buffer
 --- - Default keymaps:
 ---   - `<C-l>`: show autocompletion menu to prefilter your query by type of symbol you want to see (i.e. `:variable:`)
@@ -441,7 +439,7 @@ builtin.lsp_dynamic_workspace_symbols = require_on_exported_call("telescope.buil
 --- - Default keymaps:
 ---   - `<C-l>`: show autocompletion menu to prefilter your query with the diagnostic you want to see (i.e. `:warning:`)
 ---@param opts table: options to pass to the picker
----@field bufnr string|number: if nil get diagnostics for all open buffers. Use 0 for current buffer
+---@field bufnr number|nil: Buffer number to get diagnostics from. Use 0 for current buffer or nil for all buffers
 ---@field severity string|number: filter diagnostics by severity name (string) or id (number)
 ---@field severity_limit string|number: keep diagnostics equal or more severe wrt severity name (string) or id (number)
 ---@field severity_bound string|number: keep diagnostics equal or less severe wrt severity name (string) or id (number)

@@ -345,13 +345,11 @@ end
 actions.close = function(prompt_bufnr)
   action_state.get_current_history():reset()
   local picker = action_state.get_current_picker(prompt_bufnr)
-  local prompt_win = state.get_status(prompt_bufnr).prompt_win
   local original_win_id = picker.original_win_id
 
   actions.close_pum(prompt_bufnr)
 
-  vim.api.nvim_win_close(prompt_win, true)
-  pcall(vim.cmd, string.format([[silent bdelete! %s]], prompt_bufnr))
+  require("telescope.pickers").on_close_prompt(prompt_bufnr)
   pcall(a.nvim_set_current_win, original_win_id)
 end
 
@@ -796,12 +794,15 @@ local send_selected_to_qf = function(prompt_bufnr, mode, target)
     table.insert(qf_entries, entry_to_qf(entry))
   end
 
+  local prompt = picker:_get_prompt()
   actions.close(prompt_bufnr)
 
   if target == "loclist" then
     vim.fn.setloclist(picker.original_win_id, qf_entries, mode)
   else
+    local qf_title = string.format([[%s (%s)]], picker.prompt_title, prompt)
     vim.fn.setqflist(qf_entries, mode)
+    vim.fn.setqflist({}, "a", { title = qf_title })
   end
 end
 
@@ -814,12 +815,15 @@ local send_all_to_qf = function(prompt_bufnr, mode, target)
     table.insert(qf_entries, entry_to_qf(entry))
   end
 
+  local prompt = picker:_get_prompt()
   actions.close(prompt_bufnr)
 
   if target == "loclist" then
     vim.fn.setloclist(picker.original_win_id, qf_entries, mode)
   else
     vim.fn.setqflist(qf_entries, mode)
+    local qf_title = string.format([[%s (%s)]], picker.prompt_title, prompt)
+    vim.fn.setqflist({}, "a", { title = qf_title })
   end
 end
 
