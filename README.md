@@ -71,24 +71,34 @@ wiki.
 
 ### Installation
 
+It is suggested to either use the latest release
+[tag](https://github.com/nvim-telescope/telescope.nvim/tags) or our release
+branch (which will get consistent updates)
+[0.1.x](https://github.com/nvim-telescope/telescope.nvim/tree/0.1.x).
+
+It is not suggested to run latest master.
+
 Using [vim-plug](https://github.com/junegunn/vim-plug)
 
 ```viml
 Plug 'nvim-lua/plenary.nvim'
-Plug 'nvim-telescope/telescope.nvim'
+Plug 'nvim-telescope/telescope.nvim', { 'tag': '0.1.0' }
+" or                                , { 'branch': '0.1.x' }
 ```
 
 Using [dein](https://github.com/Shougo/dein.vim)
 
 ```viml
 call dein#add('nvim-lua/plenary.nvim')
-call dein#add('nvim-telescope/telescope.nvim')
+call dein#add('nvim-telescope/telescope.nvim', { 'rev': '0.1.0' })
+" or                                         , { 'rev': '0.1.x' })
 ```
 Using [packer.nvim](https://github.com/wbthomason/packer.nvim)
 
 ```lua
 use {
-  'nvim-telescope/telescope.nvim',
+  'nvim-telescope/telescope.nvim', tag = '0.1.0',
+-- or                            , branch = '0.1.x',
   requires = { {'nvim-lua/plenary.nvim'} }
 }
 ```
@@ -96,7 +106,7 @@ use {
 ### checkhealth
 
 Make sure you call `:checkhealth telescope` after installing telescope to ensure
-everything is setup correctly.
+everything is set up correctly.
 
 After this setup you can continue reading here or switch to `:help telescope`
 to get an understanding of how to use Telescope and how to configure it.
@@ -192,7 +202,7 @@ EOF
 ## Default Mappings
 
 Mappings are fully customizable.
-Many familiar mapping patterns are setup as defaults.
+Many familiar mapping patterns are set up as defaults.
 
 | Mappings       | Action                                               |
 |----------------|------------------------------------------------------|
@@ -200,7 +210,7 @@ Many familiar mapping patterns are setup as defaults.
 | `<C-p>/<Up>`   | Previous item                                        |
 | `j/k`          | Next/previous (in normal mode)                       |
 | `H/M/L`        | Select High/Middle/Low (in normal mode)              |
-| 'gg/G'         | Select the first/last item (in normal mode)          |
+| `gg/G`         | Select the first/last item (in normal mode)          |
 | `<CR>`         | Confirm selection                                    |
 | `<C-x>`        | Go to file selection as a split                      |
 | `<C-v>`        | Go to file selection as a vsplit                     |
@@ -299,6 +309,8 @@ Built-in functions. Ready to be bound to any key you like.
 | Functions                                   | Description                                                                                                               |
 |---------------------------------------------|---------------------------------------------------------------------------------------------------------------------------|
 | `builtin.lsp_references`                    | Lists LSP references for word under the cursor                                                                            |
+| `builtin.lsp_incoming_calls`                | Lists LSP incoming calls for word under the cursor                                                                        |
+| `builtin.lsp_outgoing_calls`                | Lists LSP outgoing calls for word under the cursor                                                                        |
 | `builtin.lsp_document_symbols`              | Lists LSP document symbols in the current buffer                                                                          |
 | `builtin.lsp_workspace_symbols`             | Lists LSP document symbols in the current workspace                                                                       |
 | `builtin.lsp_dynamic_workspace_symbols`     | Dynamically Lists LSP for all workspace symbols                                                                           |

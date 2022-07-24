@@ -333,7 +333,7 @@ previewers.new_buffer_previewer = function(opts)
       -- Push in another buffer so the last one will not be cleaned up
       if preview_window_id then
         local bufnr = vim.api.nvim_create_buf(false, true)
-        vim.api.nvim_win_set_buf(preview_window_id, bufnr)
+        utils.win_set_buf_noautocmd(preview_window_id, bufnr)
       end
     end
 
@@ -358,14 +358,14 @@ previewers.new_buffer_previewer = function(opts)
     if opts.get_buffer_by_name and get_bufnr_by_bufname(self, opts.get_buffer_by_name(self, entry)) then
       self.state.bufname = opts.get_buffer_by_name(self, entry)
       self.state.bufnr = get_bufnr_by_bufname(self, self.state.bufname)
-      vim.api.nvim_win_set_buf(status.preview_win, self.state.bufnr)
+      utils.win_set_buf_noautocmd(status.preview_win, self.state.bufnr)
     else
       local bufnr = vim.api.nvim_create_buf(false, true)
       set_bufnr(self, bufnr)
 
       vim.schedule(function()
         if vim.api.nvim_buf_is_valid(bufnr) then
-          vim.api.nvim_win_set_buf(status.preview_win, bufnr)
+          utils.win_set_buf_noautocmd(status.preview_win, bufnr)
         end
       end)
 
@@ -385,8 +385,16 @@ previewers.new_buffer_previewer = function(opts)
 
     opts.define_preview(self, entry, status)
 
-    putils.with_preview_window(status, nil, function()
-      vim.cmd "do User TelescopePreviewerLoaded"
+    vim.schedule(function()
+      if not self or not self.state or not self.state.bufnr then
+        return
+      end
+
+      if vim.api.nvim_buf_is_valid(self.state.bufnr) then
+        vim.api.nvim_buf_call(self.state.bufnr, function()
+          vim.cmd "do User TelescopePreviewerLoaded"
+        end)
+      end
     end)
 
     if opts.get_buffer_by_name then
@@ -407,11 +415,11 @@ previewers.cat = defaulter(function(opts)
   return previewers.new_buffer_previewer {
     title = "File Preview",
     dyn_title = function(_, entry)
-      return Path:new(from_entry.path(entry, true)):normalize(cwd)
+      return Path:new(from_entry.path(entry, false, false)):normalize(cwd)
     end,
 
     get_buffer_by_name = function(_, entry)
-      return from_entry.path(entry, true)
+      return from_entry.path(entry, false)
     end,
 
     define_preview = function(self, entry, status)
@@ -446,11 +454,11 @@ previewers.vimgrep = defaulter(function(opts)
   return previewers.new_buffer_previewer {
     title = "Grep Preview",
     dyn_title = function(_, entry)
-      return Path:new(from_entry.path(entry, true)):normalize(cwd)
+      return Path:new(from_entry.path(entry, false, false)):normalize(cwd)
     end,
 
     get_buffer_by_name = function(_, entry)
-      return from_entry.path(entry, true)
+      return from_entry.path(entry, false)
     end,
 
     define_preview = function(self, entry, status)
@@ -711,8 +719,12 @@ previewers.git_stash_diff = defaulter(function(opts)
         value = entry.value,
         bufname = self.state.bufname,
         cwd = opts.cwd,
+        callback = function(bufnr)
+          if vim.api.nvim_buf_is_valid(bufnr) then
+            putils.regex_highlighter(bufnr, "diff")
+          end
+        end,
       })
-      putils.regex_highlighter(self.state.bufnr, "diff")
     end,
   }
 end, {})
@@ -737,10 +749,12 @@ previewers.git_commit_diff_to_parent = defaulter(function(opts)
         bufname = self.state.bufname,
         cwd = opts.cwd,
         callback = function(bufnr)
-          search_cb_jump(self, bufnr, opts.current_line)
+          if vim.api.nvim_buf_is_valid(bufnr) then
+            search_cb_jump(self, bufnr, opts.current_line)
+            putils.regex_highlighter(bufnr, "diff")
+          end
         end,
       })
-      putils.regex_highlighter(self.state.bufnr, "diff")
     end,
   }
 end, {})
@@ -766,10 +780,12 @@ previewers.git_commit_diff_to_head = defaulter(function(opts)
         bufname = self.state.bufname,
         cwd = opts.cwd,
         callback = function(bufnr)
-          search_cb_jump(self, bufnr, opts.current_line)
+          if vim.api.nvim_buf_is_valid(bufnr) then
+            search_cb_jump(self, bufnr, opts.current_line)
+            putils.regex_highlighter(bufnr, "diff")
+          end
         end,
       })
-      putils.regex_highlighter(self.state.bufnr, "diff")
     end,
   }
 end, {})
@@ -795,10 +811,12 @@ previewers.git_commit_diff_as_was = defaulter(function(opts)
         bufname = self.state.bufname,
         cwd = opts.cwd,
         callback = function(bufnr)
-          search_cb_jump(self, bufnr, opts.current_line)
+          if vim.api.nvim_buf_is_valid(bufnr) then
+            search_cb_jump(self, bufnr, opts.current_line)
+            putils.regex_highlighter(bufnr, ft)
+          end
         end,
       })
-      putils.highlighter(self.state.bufnr, ft)
     end,
   }
 end, {})
@@ -860,8 +878,12 @@ previewers.git_file_diff = defaulter(function(opts)
           value = entry.value,
           bufname = self.state.bufname,
           cwd = opts.cwd,
+          callback = function(bufnr)
+            if vim.api.nvim_buf_is_valid(bufnr) then
+              putils.regex_highlighter(bufnr, "diff")
+            end
+          end,
         })
-        putils.regex_highlighter(self.state.bufnr, "diff")
       end
     end,
   }
@@ -877,12 +899,12 @@ previewers.autocommands = defaulter(function(_)
     end,
 
     get_buffer_by_name = function(_, entry)
-      return entry.group
+      return entry.value.group_name
     end,
 
     define_preview = function(self, entry, status)
       local results = vim.tbl_filter(function(x)
-        return x.group == entry.group
+        return x.value.group_name == entry.value.group_name
       end, status.picker.finder.results)
 
       if self.state.last_set_bufnr then
@@ -890,9 +912,9 @@ previewers.autocommands = defaulter(function(_)
       end
 
       local selected_row = 0
-      if self.state.bufname ~= entry.group then
+      if self.state.bufname ~= entry.value.group_name then
         local display = {}
-        table.insert(display, string.format(" augroup: %s - [ %d entries ]", entry.group, #results))
+        table.insert(display, string.format(" augroup: %s - [ %d entries ]", entry.value.group_name, #results))
         -- TODO: calculate banner width/string in setup()
         -- TODO: get column characters to be the same HL group as border
         table.insert(display, string.rep("─", vim.fn.getwininfo(status.preview_win)[1].width))
@@ -901,7 +923,10 @@ previewers.autocommands = defaulter(function(_)
           if item == entry then
             selected_row = idx
           end
-          table.insert(display, string.format("  %-14s▏%-08s %s", item.event, item.ft_pattern, item.command))
+          table.insert(
+            display,
+            string.format("  %-14s▏%-08s %s", item.value.event, item.value.pattern, item.value.command)
+          )
         end
 
         vim.api.nvim_buf_set_option(self.state.bufnr, "filetype", "vim")
