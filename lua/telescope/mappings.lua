@@ -80,7 +80,7 @@
 ---   {
 ---     ...,
 ---     ["<C-j>"] = {
----       action = actions.move_selection_next,
+---       actions.move_selection_next, type = "action",
 ---       opts = { nowait = true, silent = true }
 ---     },
 ---     ...,
@@ -157,6 +157,9 @@ mappings.default_mappings = config.values.default_mappings
       ["<C-/>"] = actions.which_key,
       ["<C-_>"] = actions.which_key, -- keys from pressing <C-/>
       ["<C-w>"] = { "<c-s-w>", type = "command" },
+
+      -- disable c-j because we dont want to allow new lines #2123
+      ["<C-j>"] = actions.nop,
     },
 
     n = {
