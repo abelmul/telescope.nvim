@@ -82,7 +82,7 @@ do
     if command ~= "drop" and command ~= "tab drop" then
       vim.cmd(string.format("%s %d", command, bufnr))
     else
-      vim.cmd(string.format("%s %s", command, vim.api.nvim_buf_get_name(bufnr)))
+      vim.cmd(string.format("%s %s", command, vim.fn.fnameescape(vim.api.nvim_buf_get_name(bufnr))))
     end
   end
 end
@@ -109,7 +109,7 @@ action_set.edit = function(prompt_bufnr, command)
 
     -- TODO: Check for off-by-one
     row = entry.row or entry.lnum
-    col = vim.F.if_nil(entry.col, 1)
+    col = entry.col
   elseif not entry.bufnr then
     -- TODO: Might want to remove this and force people
     -- to put stuff into `filename`
@@ -159,7 +159,6 @@ action_set.edit = function(prompt_bufnr, command)
       vim.api.nvim_buf_set_option(entry_bufnr, "buflisted", true)
     end
     edit_buffer(command, entry_bufnr)
-    require("telescope.actions.utils").__jump_to(row, col)
   else
     -- check if we didn't pick a different buffer
     -- prevents restarting lsp server
@@ -175,6 +174,18 @@ action_set.edit = function(prompt_bufnr, command)
         row,
         col
       ))
+    end
+  end
+
+  if row == nil or col == nil then
+    local pos = vim.api.nvim_win_get_cursor(0)
+    row, col = pos[1], pos[2] + 1
+  end
+
+  if row and col then
+    local ok, err_msg = pcall(a.nvim_win_set_cursor, 0, { row, col })
+    if not ok then
+      log.debug("Failed to move to cursor:", err_msg, row, col)
     end
   end
 end
